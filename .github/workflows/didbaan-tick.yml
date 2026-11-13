@@ -1,9 +1,11 @@
-# هر چند دقیقه یه پیام tick توی کانال خصوصی می‌ذاره تا دیدبان کارهای زمان‌بندی‌شده‌ش رو اجرا کنه.
+# هر ۵ دقیقه یه پیام tick توی کانال خصوصی می‌ذاره تا دیدبان کارهای زمان‌بندی‌شده‌ش رو اجرا کنه.
+# چون خود GitHub زمان‌بندی‌ها رو با تأخیر زیاد (گاهی چند ساعت) اجرا می‌کنه، هر اجرا حدود ۵ ساعت و ۴۵ دقیقه
+# می‌مونه و خودش هر ۵ دقیقه تیک می‌فرسته. اجرای بعدی پشت سرش توی صف می‌مونه و بلافاصله بعد از تموم شدنش شروع می‌شه.
 # توکن بات کمکی و آیدی کانال فقط توی Secrets خود GitHub هستن، نه توی این فایل.
 name: didbaan-tick
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/20 * * * *'
   workflow_dispatch:
 concurrency:
   group: didbaan-tick
@@ -12,18 +14,24 @@ permissions: {}
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 355
     steps:
-      - name: Send tick
+      - name: Send ticks
         env:
           HELPER_BOT_TOKEN: ${{ secrets.HELPER_BOT_TOKEN }}
           TICK_CHANNEL_ID: ${{ secrets.TICK_CHANNEL_ID }}
         run: |
           if [ -z "$HELPER_BOT_TOKEN" ] || [ -z "$TICK_CHANNEL_ID" ]; then echo "secrets are missing"; exit 1; fi
-          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
-            -X POST "https://api.telegram.org/bot${HELPER_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${TICK_CHANNEL_ID}" \
-            -d text="tick ${GITHUB_RUN_ID}" \
-            -d disable_notification=true)
-          echo "telegram answered: ${code}"
-          test "${code}" = "200"
+          fails=0
+          for i in $(seq 1 69); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
+              -X POST "https://api.telegram.org/bot${HELPER_BOT_TOKEN}/sendMessage" \
+              -d chat_id="${TICK_CHANNEL_ID}" \
+              -d text="tick ${GITHUB_RUN_ID}-${i}" \
+              -d disable_notification=true || echo 000)
+            echo "$(date -u +%H:%M:%S) tick ${i}: telegram answered ${code}"
+            if [ "${code}" = "200" ]; then fails=0; else fails=$((fails+1)); fi
+            # اگه سه بار پشت هم نشد (مثلاً توکن یا آیدی کانال غلطه)، اجرا با خطا تموم می‌شه تا توی Actions دیده بشه
+            if [ "${fails}" -ge 3 ]; then echo "three failures in a row"; exit 1; fi
+            if [ "${i}" -lt 69 ]; then sleep 300; fi
+          done
